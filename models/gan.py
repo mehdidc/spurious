@@ -21,6 +21,7 @@ def load(folder):
     discr = torch.load(os.path.join(folder, 'netD.th'))
     return gen, discr
 
+
 def generate(params):
     folder = params['folder']
     output_file = params['output_file']
@@ -39,7 +40,6 @@ def generate(params):
     np.savez(output_file, X=fake)
 
 
-
 def train(params):
     seed = params['seed']
     output_folder = params['output_folder']
@@ -54,6 +54,7 @@ def train(params):
     nb_discr_filters = model['nb_discr_filters']
     nb_gen_filters = model['nb_gen_filters']
     nb_extra_layers = model['nb_extra_layers']
+    nb_discr_iters = model['nb_discr_iters']
     clamp_value = model['clamp_value']
 
     optim = params['optim']
@@ -88,14 +89,26 @@ def train(params):
     torch.manual_seed(seed)
     np.random.seed(seed)
 
-    gen = DCGAN_G(image_size, latent_size, nb_colors, nb_gen_filters, n_extra_layers=nb_extra_layers)
+    gen = DCGAN_G(
+        image_size, 
+        latent_size, 
+        nb_colors, 
+        nb_gen_filters, 
+        n_extra_layers=nb_extra_layers
+    )
+    discr = DCGAN_D(
+        image_size, 
+        latent_size, 
+        nb_colors, 
+        nb_discr_filters, 
+        n_extra_layers=nb_extra_layers
+    )
+
     gen.apply(_weights_init)
-    discr = DCGAN_D(image_size, latent_size, nb_colors, nb_discr_filters, n_extra_layers=nb_extra_layers)
     discr.apply(_weights_init)
 
     print(gen)
     print(discr)
-
 
     input = torch.FloatTensor(batch_size, nb_colors, image_size, image_size)
     noise = torch.FloatTensor(batch_size, latent_size, 1, 1)
@@ -131,7 +144,7 @@ def train(params):
             #    Diters = 100
             #else:
             #    Diters = nb_discr_filters
-            Diters = nb_discr_filters
+            Diters = nb_discr_iters
 
             j = 0
             while j < Diters and i < len(dataloader):
@@ -213,7 +226,7 @@ def train(params):
         torch.save(discr, '{0}/netD_epoch_{1:03d}.th'.format(output_folder, epoch))
         torch.save(gen, '{0}/netD.th'.format(output_folder))
 
-        pd.DataFrame(stats_list).to_csv('{}/stats.csv'.format(output_folder))
+        pd.DataFrame(stats_list).set_index('nb_updates').to_csv('{}/stats.csv'.format(output_folder))
 
 
 def _weights_init(m):
@@ -413,35 +426,3 @@ class DCGAN_G_nobn(nn.Module):
     def forward(self, input):
         output = self.main(input)
         return output 
-
-if __name__ == '__main__':
-    params = {
-        'model': {
-            'latent_size': 100,
-            'nb_discr_filters': 128,
-            'nb_gen_filters': 128,
-            'nb_extra_layers': 0,
-            'nb_discr_iters': 5,
-            'clamp_value': 0.01,
-        },
-        'optim':{
-            'algo':{
-                'name': 'RMSprop',
-                'params':{
-                    'lr': 0.00005,
-                    #'betas': (0.5, 0.999),
-                },
-            },
-            'batch_size': 64,
-            'num_workers': 1,
-            'nb_epochs': 10000,
-        },
-        'data': {
-            'folder': '/home/mcherti/work/data/mnist/img_classes',
-            'image_size': 32,
-            'nb_colors': 1,
-        },
-        'seed': 42,
-        'output_folder': 'out',
-    }
-    train(params)
