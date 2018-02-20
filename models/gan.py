@@ -1,5 +1,7 @@
+import os
 import time
 import random
+import numpy as np
 import pandas as pd
 
 import torch
@@ -15,7 +17,27 @@ cudnn.benchmark = True
 
 
 def load(folder):
-    pass
+    gen = torch.load(os.path.join(folder, 'netG.th'))
+    discr = torch.load(os.path.join(folder, 'netD.th'))
+    return gen, discr
+
+def generate(params):
+    folder = params['folder']
+    output_file = params['output_file']
+    nb_samples = params['nb_samples']
+    gen, discr = load(folder)
+
+    latent_size = gen.nz
+
+    use_cuda = torch.cuda.is_available()
+    fixed_noise = torch.FloatTensor(nb_samples, latent_size, 1, 1).normal_(0, 1)
+    if use_cuda:
+        fixed_noise = fixed_noise.cuda()
+    fixed_noise = Variable(fixed_noise)
+    fake = gen(fixed_noise)
+    fake = fake.data.cpu().numpy()
+    np.savez(output_file, X=fake)
+
 
 
 def train(params):
@@ -43,7 +65,7 @@ def train(params):
 
     use_cuda = torch.cuda.is_available()
     if use_cuda:
-        print('Using cuda')
+        print('Using cuda...')
     
     normalize_mu = (0.5,) * nb_colors
     normalize_std = (0.5,) * nb_colors
@@ -64,6 +86,7 @@ def train(params):
 
     random.seed(seed)
     torch.manual_seed(seed)
+    np.random.seed(seed)
 
     gen = DCGAN_G(image_size, latent_size, nb_colors, nb_gen_filters, n_extra_layers=nb_extra_layers)
     gen.apply(_weights_init)
@@ -185,7 +208,11 @@ def train(params):
 
         # do checkpointing
         torch.save(gen, '{0}/netG_epoch_{1:03d}.th'.format(output_folder, epoch))
+        torch.save(gen, '{0}/netG.th'.format(output_folder))
+
         torch.save(discr, '{0}/netD_epoch_{1:03d}.th'.format(output_folder, epoch))
+        torch.save(gen, '{0}/netD.th'.format(output_folder))
+
         pd.DataFrame(stats_list).to_csv('{}/stats.csv'.format(output_folder))
 
 
@@ -201,6 +228,12 @@ class DCGAN_D(nn.Module):
     def __init__(self, isize, nz, nc, ndf, n_extra_layers=0):
         super().__init__()
         assert isize % 16 == 0, "isize has to be a multiple of 16"
+
+        self.isize = isize
+        self.nz = nz
+        self.nc = nc
+        self.ndf = ndf
+        self.n_extra_layers = n_extra_layers
 
         main = nn.Sequential()
         # input is nc x isize x isize
@@ -246,6 +279,12 @@ class DCGAN_G(nn.Module):
     def __init__(self, isize, nz, nc, ngf, n_extra_layers=0):
         super(DCGAN_G, self).__init__()
         assert isize % 16 == 0, "isize has to be a multiple of 16"
+
+        self.isize = isize
+        self.nz = nz
+        self.nc = nc
+        self.ngf = ngf
+        self.n_extra_layers = n_extra_layers
 
         cngf, tisize = ngf//2, 4
         while tisize != isize:
@@ -375,9 +414,6 @@ class DCGAN_G_nobn(nn.Module):
         output = self.main(input)
         return output 
 
-def generate(params):
-    pass
-
 if __name__ == '__main__':
     params = {
         'model': {
@@ -390,10 +426,10 @@ if __name__ == '__main__':
         },
         'optim':{
             'algo':{
-                'name': 'Adam',
+                'name': 'RMSprop',
                 'params':{
-                    'lr': 0.0002,
-                    'betas': (0.5, 0.999),
+                    'lr': 0.00005,
+                    #'betas': (0.5, 0.999),
                 },
             },
             'batch_size': 64,
