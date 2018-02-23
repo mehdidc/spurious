@@ -37,7 +37,7 @@ def reconstruct(params):
     nb_iter = params['nb_iter']
 
     gen, discr = load(folder)
-    latent_size = gen.nz
+    latent_size = gen.latent_size
 
     dataset = load_data(
         data_path,
@@ -54,7 +54,7 @@ def reconstruct(params):
     noise = torch.FloatTensor(batch_size, latent_size, 1, 1).normal_(0, 1)
     if use_cuda:
         noise = noise.cuda()
-    input = torch.FloatTensor(batch_size, nb_colors, gen.w, gen.w)
+    input = torch.FloatTensor(batch_size, nb_colors, image_size, image_size)
     
     grads = {}
     def save_grads(g):
@@ -75,17 +75,16 @@ def reconstruct(params):
         noise.normal_(0, 1)
         if use_cuda:
             input = input.cuda()
-        
+        print('Batch {}/{}'.format(b, nb_batches))
         for it in range(nb_iter):
             noisev = Variable(noise, requires_grad=True)
             noisev.register_hook(save_grads)
             fake = gen(noisev)
             loss = ((fake - input)**2).mean()
             loss.backward()
-            print(loss.data[0])
             dnoise = grads['h']
             noise -= lr * dnoise.data
-
+        print(loss.data[0])
         z_list.append(noise.cpu().numpy())
         x_list.append(real_cpu.cpu().numpy())
         xrec_list.append(fake.data.cpu().numpy())
@@ -101,7 +100,7 @@ def generate(params):
     nb_samples = params['nb_samples']
     gen, discr = load(folder)
 
-    latent_size = gen.nz
+    latent_size = gen.latent_size
 
     use_cuda = torch.cuda.is_available()
     fixed_noise = torch.FloatTensor(nb_samples, latent_size, 1, 1).normal_(0, 1)

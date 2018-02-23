@@ -1,9 +1,12 @@
 import torch
 import numpy as np
+import h5py
+
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 from torchsample.datasets import TensorDataset
 from torch.nn.init import xavier_uniform
+
 
 def load_data(data_path, image_size, data_type):
     transform=transforms.Compose([
@@ -23,6 +26,16 @@ def load_data(data_path, image_size, data_type):
             inputs=X, 
             targets=y,
         )
+
+    elif data_type == 'h5':
+        data = h5py.File(data_path, 'r')
+        X = data['X']
+        if 'y' in data:
+            y  = (data['y'])
+        else:
+            y = np.zeros(len(X))
+        dataset = H5Dataset(X, y, transform=lambda u:u.float()/255.)
+
     elif data_type == 'image_folder':
         dataset = datasets.ImageFolder(
             root=data_path,
@@ -51,3 +64,15 @@ def weights_init(m):
         m.bias.data.fill_(0)
 
 
+class H5Dataset:
+
+    def __init__(self, X, y, transform=lambda x:x):
+        self.X = X
+        self.y = y
+        self.transform = transform
+
+    def __getitem__(self, index):
+        return self.transform(torch.from_numpy(self.X[index])), self.y[index]
+
+    def __len__(self):
+        return len(self.X)
