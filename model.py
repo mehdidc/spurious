@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from torch.autograd import Variable
 
 class Gen(nn.Module):
     def __init__(self, latent_size=100, nb_gen_filters=64, nb_colors=1, image_size=64):
@@ -109,33 +109,85 @@ class DiscrMnist(nn.Module):
         x = self.conv3(x)
         return x
 
+class VAE(nn.Module):
 
-class LayerNorm(nn.Module):
+    def __init__(self, nb_colors=1, nb_filters=64, latent_size=256, image_size=64, use_cuda=True):
+        super().__init__()
+        self.nb_colors = nb_colors
+        self.nb_filters = nb_filters
+        self.latent_size = latent_size
+        self.image_size = image_size
+        self.use_cuda = use_cuda
 
-    def __init__(self, num_features, eps=1e-5, affine=True):
-        super(LayerNorm, self).__init__()
-        self.num_features = num_features
-        self.affine = affine
-        self.eps = eps
+        nc = self.nb_colors
+        nf = self.nb_filters
+        w = self.image_size
 
-        if self.affine:
-            self.gamma = nn.Parameter(torch.Tensor(num_features).uniform_())
-            self.beta = nn.Parameter(torch.zeros(num_features))
+        nb_blocks = int(np.log(w)/np.log(2)) - 3
+        layers = [
+            nn.Conv2d(nc, nf, 4, 2, 1, bias=False),
+            nn.LeakyReLU(0.2, inplace=True),
+        ]
+        for _ in range(nb_blocks):
+            layers.extend([
+                nn.Conv2d(nf, nf * 2, 4, 2, 1, bias=False),
+                #nn.BatchNorm2d(nf * 2),
+                nn.LeakyReLU(0.2, inplace=True),
+            ])
+            nf = nf * 2
+        
+        self._encode = nn.Sequential(*layers)
 
-    def forward(self, x):
-        shape = [-1] + [1] * (x.dim() - 1)
-        mean = x.view(x.size(0), -1).mean(1).view(*shape)
-        std = x.view(x.size(0), -1).std(1).view(*shape)
+        wl = w // 2**(nb_blocks+1)
+        self.pre_latent_size = (nf, wl, wl)
+        self.latent = nn.Sequential(
+            nn.Linear(nf * wl * wl, latent_size * 2),
+        )
+        self.post_latent = nn.Sequential(
+            nn.Linear(latent_size, nf * wl * wl)
+        )
+        layers = []
+        for _ in range(nb_blocks):
+            layers.extend([
+                nn.ConvTranspose2d(nf, nf // 2, 4, 2, 1, bias=False),
+                #nn.BatchNorm2d(nf // 2),
+                nn.ReLU(True),
+            ])
+            nf = nf // 2
+        layers.append(
+            nn.ConvTranspose2d(nf,  nc, 4, 2, 1, bias=True),
+        )
+        layers.append(nn.Sigmoid())
+        self._decode = nn.Sequential(*layers)
 
-        y = (x - mean) / (std + self.eps)
-        if self.affine:
-            shape = [1, -1] + [1] * (x.dim() - 2)
-            y = self.gamma.view(*shape) * y + self.beta.view(*shape)
-        return y
+    def forward(self, input):
+        h_mu, h_log_sigma = self.encode(input)
+        noise = torch.randn(h_mu.size())
+        if self.use_cuda:
+            noise = noise.cuda()
+        noise = Variable(noise)
+        h = h_mu + torch.exp(h_log_sigma) * noise
+        return h_mu, h_log_sigma, self.decode(h)
+    
+    def encode(self, input):
+        x = self._encode(input)
+        x = x.view(x.size(0), -1)
+        h = self.latent(x)
+        h_mu = h[:, 0:self.latent_size]
+        h_log_sigma = h[:, self.latent_size:]
+        return h_mu, h_log_sigma
+
+    def decode(self, h):
+        x = self.post_latent(h)
+        x = x.view((x.size(0),) + self.pre_latent_size)
+        return self._decode(x)
+ 
+
 
 models = {
     'Gen': Gen,
     'GenMnist': GenMnist,
     'Discr': Discr,
     'DiscrMnist': DiscrMnist,
+    'VAE': VAE,
 }

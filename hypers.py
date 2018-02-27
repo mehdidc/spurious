@@ -1,9 +1,8 @@
 import os
 from clize import run
 import gan
-from gan import * # NOQA
-
-
+import vae
+from model import *
 from utils import load_data
 
 def mnist():
@@ -15,8 +14,6 @@ def mnist():
             'params': {
                 'latent_size': 100,
                 'nb_gen_filters': 128,
-                #'nb_colors': nb_colors,
-                #'image_size': image_size
             }
         },
         'discriminator': {
@@ -24,8 +21,6 @@ def mnist():
 
             'params': {
                 'nb_discr_filters': 128,
-                #'nb_colors': nb_colors,
-                #'image_size': image_size
             }
         },
         'gradient_penalty_coef': 10.0,
@@ -46,15 +41,28 @@ def mnist():
             'nb_epochs': 10000,
         },
         'data': {
-            'path': 'data/digits.npz',
-            'type': 'npy',
-            'image_size': image_size,
-            'nb_colors': nb_colors,
+            'train':{
+                'path': 'data/digits.npz',
+                'type': 'npy',
+                'image_size': image_size,
+                'nb_colors': nb_colors,
+            },
+            'test':{
+                'path': 'data/digits_test.npz',
+                'type': 'npy',
+                'image_size': image_size,
+                'nb_colors': nb_colors,
+            }
+
         },
         'seed': 42,
         'output_folder': 'mnist',
+        'family': 'gan',
     }
     return params
+
+
+
 
 def celeba():
     nb_colors = 3
@@ -95,20 +103,89 @@ def celeba():
             'nb_epochs': 10000,
         },
         'data': {
-            'path': 'data/celeba64_align.h5',
-            'type': 'h5',
-            'image_size': image_size,
-            'nb_colors': nb_colors,
+            'train':{
+                'path': 'data/celeba64_align.h5',
+                'type': 'h5',
+                'image_size': image_size,
+                'nb_colors': nb_colors,
+            },
+            'test':{
+                'path': 'data/lfw.npz',
+                'type': 'npy',
+                'image_size': image_size,
+                'nb_colors': nb_colors,
+            }
+ 
         },
         'seed': 42,
         'output_folder': 'celeba',
+        'family': 'gan',
     }
     return params
 
 
+def cifar():
+    image_size = 32
+    nb_colors = 3
+    params = celeba()
+    params['model'] = {
+        'generator': {
+            'name': 'Gen',
+            'params': {
+                'latent_size': 100,
+                'nb_gen_filters': 128,
+                'nb_colors': nb_colors,
+                'image_size': image_size
+            }
+        },
+        'discriminator': {
+            'name': 'Discr',
+            'params': {
+                'nb_discr_filters': 128,
+                'nb_colors': nb_colors,
+                'image_size': image_size
+            }
+        },
+        'gradient_penalty_coef': 10.0,
+        'nb_discr_iters': 5,
+    }
+
+    params['data'] = {
+        'train':{
+            'path': 'data/cifar10.npz',
+            'type': 'npy',
+            'image_size': image_size,
+            'nb_colors': nb_colors,
+        },
+        'test':{
+            'path': 'data/cifar10_test.npz',
+            'type': 'npy',
+            'image_size': image_size,
+            'nb_colors': nb_colors,
+        },
+    }
+    params['output_folder'] = 'cifar'
+    return params
+
+def cifar_vae():
+    params = cifar()
+    params['model'] = {
+        'name': 'VAE',
+        'params': {
+            'nb_colors': 3,
+            'nb_filters': 64,
+            'latent_size': 256,
+            'image_size': 32,
+        }
+    }
+    params['family'] = 'vae'
+    params['output_folder'] = 'results/vae/cifar'
+    return params
+
 def train(model):
     params = globals()[model]()
-    gan.train(params)
+    family = globals()[params['family']]
+    family.train(params)
 
 def generate(folder):
     params = {
@@ -116,22 +193,28 @@ def generate(folder):
         'nb_samples': 1000,
         'output_file': '{}/gen.npz'.format(folder)
     }
-    gan.generate(params)
+    family = globals()[params['family']]
+    family.generate(params)
 
-def reconstruct(folder):
-    data = globals()[folder]()['data']
-    dataset = load_data(data['data_path'], data['image_size'], data['data_type'])
-    batch_size = 64
+
+
+def reconstruct(folder, *, nb_examples=None, batch_size=64):
+    data = globals()[folder]()['data']['test']
+    dataset = load_data(data['path'], data['image_size'], data['type'])
+    if nb_examples is None:
+        nb_examples = len(dataset)
+    nb_examples = int(nb_examples)
     params = {
         'folder': folder,
         'data': data,
         'batch_size': batch_size,
-        'nb_batches': len(dataset)//batch_size,
+        'nb_batches': nb_examples//batch_size,
         'lr': 100.0,
-        'nb_iter': 300,
+        'nb_iter': 500,
         'output_file': os.path.join(folder, 'recons.npz')
     }
-    gan.reconstruct(params)
+    family = globals()[params['family']]
+    family.reconstruct(params)
 
 if __name__ == '__main__':
     run([train, generate, reconstruct])

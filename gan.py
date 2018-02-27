@@ -116,7 +116,7 @@ def train(params):
     seed = params['seed']
     output_folder = params['output_folder']
 
-    data = params['data']
+    data = params['data']['train']
     image_size = data['image_size']
     nb_colors = data['nb_colors']
     data_path = data['path']
