@@ -125,12 +125,12 @@ class VAE(nn.Module):
 
         nb_blocks = int(np.log(w)/np.log(2)) - 3
         layers = [
-            nn.Conv2d(nc, nf, 4, 2, 1, bias=False),
+            nn.Conv2d(nc, nf, 4, 2, 1),
             nn.LeakyReLU(0.2, inplace=True),
         ]
         for _ in range(nb_blocks):
             layers.extend([
-                nn.Conv2d(nf, nf * 2, 4, 2, 1, bias=False),
+                nn.Conv2d(nf, nf * 2, 4, 2, 1),
                 #nn.BatchNorm2d(nf * 2),
                 nn.LeakyReLU(0.2, inplace=True),
             ])
@@ -149,39 +149,95 @@ class VAE(nn.Module):
         layers = []
         for _ in range(nb_blocks):
             layers.extend([
-                nn.ConvTranspose2d(nf, nf // 2, 4, 2, 1, bias=False),
+                nn.ConvTranspose2d(nf, nf // 2, 4, 2, 1),
                 #nn.BatchNorm2d(nf // 2),
                 nn.ReLU(True),
             ])
             nf = nf // 2
         layers.append(
-            nn.ConvTranspose2d(nf,  nc, 4, 2, 1, bias=True),
+            nn.ConvTranspose2d(nf,  nc, 4, 2, 1),
         )
         layers.append(nn.Sigmoid())
         self._decode = nn.Sequential(*layers)
 
     def forward(self, input):
-        h_mu, h_log_sigma = self.encode(input)
+        h_mu, h_log_var = self.encode(input)
         noise = torch.randn(h_mu.size())
         if self.use_cuda:
             noise = noise.cuda()
         noise = Variable(noise)
-        h = h_mu + torch.exp(h_log_sigma) * noise
-        return h_mu, h_log_sigma, self.decode(h)
+        h = h_mu + torch.exp(h_log_var * 0.5) * noise
+        return h_mu, h_log_var, self.decode(h)
     
     def encode(self, input):
         x = self._encode(input)
         x = x.view(x.size(0), -1)
         h = self.latent(x)
         h_mu = h[:, 0:self.latent_size]
-        h_log_sigma = h[:, self.latent_size:]
-        return h_mu, h_log_sigma
+        h_log_var = h[:, self.latent_size:]
+        return h_mu, h_log_var
 
     def decode(self, h):
         x = self.post_latent(h)
         x = x.view((x.size(0),) + self.pre_latent_size)
         return self._decode(x)
- 
+
+
+class MaskedConv2d(nn.Conv2d):
+    def __init__(self, mask_type, nb_colors, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.mask_type = mask_type
+        self.nb_colors = nb_colors
+        assert mask_type in {'A', 'B'}
+        self.register_buffer('mask', self.weight.data.clone())
+        _, _, kH, kW = self.weight.size()
+        self.mask.fill_(1)
+        self.mask[:, :, kH // 2, kW // 2 + (mask_type == 'B'):] = 0
+        self.mask[:, :, kH // 2 + 1:] = 0
+        for i in range(nb_colors):
+            for j in range(i + 1, nb_colors):
+                if mask_type == 'A':
+                    # all centers of channels are 0
+                    # thus, put centers of channels which correspond to j > i to 1
+                    # that is, color j can use the values of color i because j > i
+                    self.mask[j::nb_colors, i::nb_colors, kH // 2, kW // 2] = 1
+                elif mask_type == 'B':
+                    # all centers of channels are 1
+                    # put the centers of channels which correspond to i < j to 0
+                    # that is, color i cannot use the values of color j because i < j
+                    self.mask[i::nb_colors, j::nb_colors, kH // 2, kW // 2] = 0
+
+    def forward(self, x):
+        self.weight.data *= self.mask
+        return super().forward(x)
+
+
+class PixelCNN(nn.Module):
+
+    def __init__(self, nb_layers=6, nb_feature_maps=64, filter_size=5, nb_colors=1, image_size=28, dilation=1):
+        super().__init__()
+        self.nb_layers = nb_layers
+        self.nb_feature_maps = nb_feature_maps
+        self.filter_size = filter_size
+        self.nb_colors = nb_colors
+        self.image_size = image_size
+        self.dilation = dilation
+        
+        fm = nb_feature_maps  * nb_colors
+        fs = filter_size
+        pad = ((fs - 1) // 2) 
+        d = (dilation - 1) * ((fs - 1) // 2)
+        layers = []
+        layers.append(MaskedConv2d('A', nb_colors, nb_colors, fm, fs, 1, pad))
+        for i in range(nb_layers - 1):
+            layers.append(MaskedConv2d('B', nb_colors, fm, fm, fs, 1, pad + d, dilation=dilation))
+            layers.append(nn.ReLU(True))
+        layers.append(MaskedConv2d('B', nb_colors, fm, 256 * nb_colors, fs, 1, pad))
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.net(x)
+
 
 
 models = {
@@ -190,4 +246,5 @@ models = {
     'Discr': Discr,
     'DiscrMnist': DiscrMnist,
     'VAE': VAE,
+    'PixelCNN': PixelCNN,
 }

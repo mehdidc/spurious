@@ -2,10 +2,11 @@ import os
 from clize import run
 import gan
 import vae
+import pixelcnn
 from model import *
 from utils import load_data
 
-def mnist():
+def mnist_gan():
     nb_colors = 1
     image_size = 28
     model = {
@@ -62,9 +63,24 @@ def mnist():
     return params
 
 
+def mnist_pixelcnn():
+    params = mnist_gan()
+    params['model'] = {
+        'name': 'PixelCNN',
+        'params':{
+            'nb_layers': 6,
+            'nb_feature_maps': 64,
+            'filter_size': 5,
+            'dilation': 2,
+        }
+    }
+    params['output_folder'] = 'results/pixelcnn/mnist'
+    params['family'] = 'pixelcnn'
+    params['optim']['algo']['params']['lr'] = 1e-3
+    return params
 
 
-def celeba():
+def celeba_gan():
     nb_colors = 3
     image_size = 64
     model = {
@@ -124,10 +140,27 @@ def celeba():
     return params
 
 
-def cifar():
+def celeba_vae():
+    params = celeba_gan()
+    params['model'] = {
+        'name': 'VAE',
+        'params': {
+            'nb_colors': 3,
+            'nb_filters': 64,
+            'latent_size': 32,
+            'image_size': 64,
+        }
+    }
+    params['family'] = 'vae'
+    params['output_folder'] = 'results/vae/celeba'
+    return params
+
+
+
+def cifar_gan():
     image_size = 32
     nb_colors = 3
-    params = celeba()
+    params = celeba_gan()
     params['model'] = {
         'generator': {
             'name': 'Gen',
@@ -167,14 +200,15 @@ def cifar():
     params['output_folder'] = 'cifar'
     return params
 
+
 def cifar_vae():
-    params = cifar()
+    params = cifar_gan()
     params['model'] = {
         'name': 'VAE',
         'params': {
             'nb_colors': 3,
             'nb_filters': 64,
-            'latent_size': 256,
+            'latent_size': 512,
             'image_size': 32,
         }
     }
@@ -182,20 +216,41 @@ def cifar_vae():
     params['output_folder'] = 'results/vae/cifar'
     return params
 
+
+def cifar_pixelcnn():
+    params = cifar_gan()
+    params['model'] = {
+        'nb_layers': 6,
+        'nb_feature_maps': 64,
+        'filter_size': 5,
+    }
+    params['output_folder'] = 'results/pixelcnn/cifar'
+    params['family'] = 'pixelcnn'
+    params['optim']['algo']['params']['lr'] = 1e-3
+    return params
+
+
+    params['family'] = 'vae'
+    params['output_folder'] = 'results/vae/cifar'
+    return params
+
+
+
 def train(model):
     params = globals()[model]()
     family = globals()[params['family']]
     family.train(params)
 
-def generate(folder):
+
+def generate(folder, *, family='gan'):
     params = {
         'folder': folder,
         'nb_samples': 1000,
-        'output_file': '{}/gen.npz'.format(folder)
+        'output_file': '{}/gen.npz'.format(folder),
+        'family': family
     }
     family = globals()[params['family']]
     family.generate(params)
-
 
 
 def reconstruct(folder, *, nb_examples=None, batch_size=64):
@@ -215,6 +270,7 @@ def reconstruct(folder, *, nb_examples=None, batch_size=64):
     }
     family = globals()[params['family']]
     family.reconstruct(params)
+
 
 if __name__ == '__main__':
     run([train, generate, reconstruct])

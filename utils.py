@@ -7,7 +7,10 @@ import torchvision.transforms as transforms
 from torchsample.datasets import TensorDataset
 from torch.nn.init import xavier_uniform
 
-from machinedesign.viz import grid_of_images, vert_merge, horiz_merge
+from machinedesign.viz import grid_of_images, vert_merge, horiz_merge, grid_of_images_default
+
+grid_of_images_with_border = grid_of_images_default
+
 
 def load_data(data_path, image_size, data_type):
     transform=transforms.Compose([

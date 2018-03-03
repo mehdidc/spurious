@@ -15,6 +15,7 @@ from model import models
 
 cudnn.benchmark = True
 
+
 def load(folder):
     gen = torch.load(os.path.join(folder, 'netG.th'))
     discr = torch.load(os.path.join(folder, 'netD.th'))
