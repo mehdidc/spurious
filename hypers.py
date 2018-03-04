@@ -69,7 +69,7 @@ def mnist_pixelcnn():
         'name': 'PixelCNN',
         'params':{
             'nb_layers': 6,
-            'nb_feature_maps': 64,
+            'nb_feature_maps': 128,
             'filter_size': 5,
             'dilation': 2,
         }
@@ -220,9 +220,14 @@ def cifar_vae():
 def cifar_pixelcnn():
     params = cifar_gan()
     params['model'] = {
-        'nb_layers': 6,
-        'nb_feature_maps': 64,
-        'filter_size': 5,
+        'name': 'PixelCNN',
+        'params':{
+            'nb_layers': 6,
+            'nb_feature_maps': 128,
+            'filter_size': 5,
+            'dilation': 2,
+            'nb_colors': 3,
+        }
     }
     params['output_folder'] = 'results/pixelcnn/cifar'
     params['family'] = 'pixelcnn'
